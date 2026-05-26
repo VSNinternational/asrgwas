@@ -1,0 +1,23 @@
+
+## For additional details on the variable values
+## used during c++ and fortran builds see the 
+## R Makeconf file in ${R_HOME}/etc folder.
+## Run R script for full path : 
+##   >  file.path(R.home("etc"), "Makeconf")
+## RcppArmadillo 15.0.0 and later require at least C++14. Use C++20 explicitly
+## so R's default C++ standard does not vary across build toolchains.
+##
+CXX_STD = CXX20
+
+## Apple clang 12 on macOS x64 accepts the C++20 draft spelling only.
+ifeq ($(shell uname -s),Darwin)
+  ifeq ($(shell uname -m),x86_64)
+    override CXX20STD = -std=gnu++2a
+  endif
+endif
+
+## Add include and library paths for the libomp installation on macOS-arm64 
+## These are ignored for other platforms.
+
+PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS) $(VSN_OMP_INCLUDES)
+PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(VSN_OMP_LIB) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS) 
