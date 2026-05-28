@@ -1,0 +1,53 @@
+Type: Package
+Package: ASRgwas
+Title: ASRgwas an R package to perform Genome-Wide Association Studies
+    (GWAS)
+Version: 1.1.3
+Authors@R: c(
+    person("Salvador", "Gezan", , "salvador.gezan@vsni.co.uk", role = c("aut", "cre")),
+    person("Giovanni", "Galli", , "giovanni.galli@vsni.co.uk", role = "aut"),
+    person("Didier", "Murillo", , "didier.murilloflorez@ndus.edu", role = "aut"),
+    person("Darren", "Murray", , "darren.murray@vsni.co.uk", role = "aut"),
+    person("VSN International", role = "cph")
+  )
+Description: ASRgwas is a comprehensive R package designed to perform
+    Genome-Wide Association Studies (GWAS) using the modelling flexibility
+    available in ASReml-R. This library assists with preparing and
+    auditing phenotypic and genomic data; fitting GWAS models and
+    identifying significant markers; and evaluating and exploring output.
+License: MIT + file LICENSE
+Depends: 
+    R (>= 4.3.0)
+Imports:
+    cli,
+    data.table,
+    ggplot2,
+    ggrepel,
+    Matrix,
+    methods,
+    stringr,
+    parallel,
+    Rcpp,
+    ASRgenomics (>= 1.1.5),
+    ASRtools
+Enhances:
+    asreml
+Suggests: 
+    knitr,
+    rmarkdown,
+    spelling,
+    testthat (>= 3.0.0),
+    R.rsp
+VignetteBuilder: knitr, R.rsp
+Remotes:
+    VSNinternational/asrtools@*release,
+Config/testthat/edition: 3
+LinkingTo: 
+    Rcpp,
+    RcppArmadillo
+SystemRequirements: C++20
+Encoding: UTF-8
+LazyData: true
+LazyDataCompression: xz
+RoxygenNote: 8.0.0
+Language: en-GB

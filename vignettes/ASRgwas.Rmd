@@ -1,0 +1,416 @@
+---
+title: "ASRgwas: Genome-Wide Association Studies using ASReml-R"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{ASRgwas: Genome-Wide Association Studies using ASReml-R}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<div style="text-align: left; margin-bottom: 5px; margin-top: 25px;">
+  <img src="../man/figures/logo.png" alt="ASRgwas logo" style="height: 5em;"/>
+</div>
+
+```{r setup, include=FALSE}
+has_asreml <- requireNamespace("asreml", quietly = TRUE)
+if (has_asreml) library(asreml)
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.align = "center",
+  fig.width = 6,
+  fig.height = 4
+)
+```
+
+## Description
+
+`ASRgwas` is a comprehensive R package designed to perform Genome-Wide Association
+Studies (GWAS) using the modelling flexibility available in
+[**ASReml-R**](https://vsni.co.uk/software/asreml-r). This library assists with
+preparing and auditing phenotypic and genomic data; fitting GWAS models and
+identifying significant markers; and evaluating and exploring output.
+
+Main features:
+
+- Data preparation and quality control via `pre.gwas()`.
+- Dataset auditing and diagnostics via `audit.gwas()`.
+- GWAS model fitting via `gwas.asreml()`, with support for Gaussian and binomial
+  responses, population structure correction (**Q matrix**) and genomic
+  relationship matrix (**K matrix**).
+- Backward elimination for final marker selection via `select.marker()`.
+
+Additional features (visualisation and exploration):
+
+- Manhattan plots via `manhattan.plot()`.
+- Quantile-quantile (Q-Q) plots via `qq.plot()`.
+- Phenotype-by-genotype plots for selected markers via `marker.plot()`.
+- Genetic map visualisation via `map.plot()`.
+
+## Installation
+
+You can install `ASRgwas` from [GitHub](https://github.com/) with:
+
+```{r installation, eval = FALSE}
+# install.packages("remotes")
+remotes::install_url("https://github.com/VSNinternational/asrgwas/releases/latest/download/ASRgwas_latest.tar.gz")
+```
+
+### Dependencies
+
+`ASRgwas` depends on **R (>= 4.3.0)** and on the following packages:
+`cli`, `data.table`, `ggplot2`, `ggrepel`, `Matrix`, `methods`, `stringr`,
+`parallel`, `Rcpp`,
+[`ASRgenomics`](https://github.com/VSNinternational/asrgenomics/releases/latest/download/ASRgenomics_latest.tar.gz) (>= 1.1.5), and
+[`ASRtools`](https://github.com/VSNinternational/asrtools/releases/latest/download/ASRtools_latest.tar.gz).
+
+> **Note on ASReml-R:** the core GWAS model fitting relies on
+> [**asreml**](https://vsni.co.uk/software/asreml-r), a commercial package
+> available from VSN International. A valid licence is required. Install it
+> separately before using `gwas.asreml()`.
+
+## Loading the package
+
+Once installed, load the package as usual:
+
+```{r load}
+library(ASRgwas)
+```
+
+A quick check that the package is ready:
+
+```{r check, eval = FALSE}
+?ASRgwas
+ls("package:ASRgwas")
+```
+
+## Overview
+
+This tutorial organises the `ASRgwas` workflow into four steps:
+
+1. **Prepare** — quality-control and match phenotypic and genomic datasets with `pre.gwas()`.
+2. **Fit** — run the GWAS scan across all markers with `gwas.asreml()`.
+3. **Select** — refine the set of significant markers via backward elimination with `select.marker()`.
+4. **Explore** — visualise and interpret results with `manhattan.plot()`, `qq.plot()`, `marker.plot()`, and `map.plot()`.
+
+### 1. Input data
+
+`ASRgwas` works with three complementary objects.
+
+The **phenotypic data frame** `pheno.data` must contain at least one column
+identifying the individuals (genotypes) and one numeric column with the response
+variable. Additional fixed effects, random effects, and covariates can be included
+as extra columns.
+
+The **genotype matrix** `geno.data` must be a numeric matrix with **individuals
+on the rows** and **SNP markers on the columns**. Row names hold the individual
+identifiers and column names hold the marker identifiers. Allele dosages are
+encoded as **`0`**, **`1`**, and **`2`** (copies of the alternative allele),
+with **`NA`** for missing calls.
+
+The **genomic map** `map.data` is a `data.frame` with exactly three columns:
+**`marker`** (matching the column names of `geno.data`), **`chrom`** (chromosome
+identifier), and **`pos`** (physical or genetic position).
+
+The package ships with three demonstration datasets from
+[Nsibi *et al.* (2020)](https://doi.org/10.1534/g3.120.401437) — an apricot
+(*Prunus armeniaca*) F1 population of 155 genotypes and 60,991 SNPs — which can
+be loaded as shown below and used as a template throughout this guide.
+
+```{r datasets}
+# Example datasets shipped with the package
+data(pheno.apricot)  # phenotypic data frame (153 individuals, 9 traits)
+data(geno.apricot)   # genotype matrix (155 individuals × 60,991 SNPs)
+data(map.apricot)    # genomic map (60,991 markers)
+```
+
+### 2. Preparing data with `pre.gwas()`
+
+`pre.gwas()` is the data preparation step. It checks, corrects, and matches the
+phenotypic and genomic inputs and automatically generates the objects required by
+`gwas.asreml()`: the genomic relationship matrix **K**, its inverse **Kinv**, and
+the population structure matrix **Q** obtained via principal component analysis.
+
+```{r pre-gwas-simple}
+# Simple run with default QC filters.
+gwas.data <- pre.gwas(
+  pheno.data = pheno.apricot, indiv = "Ind", resp = "Sucrose",
+  geno.data  = geno.apricot)
+```
+
+Additional quality-control filters and procedures can be passed directly via `...`.
+Run `pre.gwas()` with no arguments to see the full list of available options
+(forwarded from `ASRgenomics`):
+
+```{r pre-gwas-args, eval = FALSE}
+# List all accepted arguments.
+pre.gwas()
+```
+
+A more complete call applying marker filtering, SNP pruning, and imputation:
+
+```{r pre-gwas-full, eval = FALSE}
+gwas.data <- pre.gwas(
+  pheno.data = pheno.apricot, indiv = "Ind", resp = "Sucrose",
+  geno.data  = geno.apricot, map.data = map.apricot,
+  # QC options forwarded to ASRgenomics
+  maf = 0.05, marker.callrate = 0.40,
+  pruning.thr = 0.95, by.chrom = TRUE,
+  impute = TRUE)
+```
+
+`pre.gwas()` returns a named list with (by default) all eight components:
+`pheno.data`, `geno.data`, `K`, `Kinv`, `map.data`, `Q`, `plot.scree`, and
+`eigenvalues`. Pass a character vector to the `return` argument to request only
+a subset.
+
+```{r pre-gwas-ls}
+# Inspect returned objects
+ls(gwas.data)
+```
+
+```{r pre-gwas-scree}
+# Scree plot of principal components
+gwas.data$plot.scree
+```
+
+```{r pre-gwas-eigen}
+# Eigenvalues table
+head(gwas.data$eigenvalues)
+```
+
+Alternatively, `audit.gwas()` can be used in place of `pre.gwas()` when the
+user has already constructed the required objects externally and simply wants to
+verify that all attributes and formats are suitable for `gwas.asreml()`:
+
+```{r audit-gwas}
+audit.gwas(
+  pheno.data = gwas.data$pheno.data, indiv = "Ind", resp = "Sucrose",
+  Kinv = gwas.data$Kinv, geno.data = gwas.data$geno.data,
+  map.data = gwas.data$map.data, Q = gwas.data$Q)
+```
+
+### 3. Fitting GWAS models with `gwas.asreml()`
+
+`gwas.asreml()` is the main function of `ASRgwas`. It extends ASReml-R to perform
+a genome-wide scan by fitting, for each marker, a mixed model that can include
+fixed effects, random effects, population structure (**Q**), and a genomic
+relationship matrix (**K**).
+
+#### 3.a. Base model (no marker scan)
+
+It is good practice to first fit the base model — without any marker — to evaluate
+the model structure and heritability before running the full scan.
+
+```{r gwas-base, eval = has_asreml}
+gwasA <- gwas.asreml(
+  pheno.data = gwas.data$pheno.data,
+  resp       = "Sucrose",
+  gen        = "Ind",
+  fixedf     = "Lots",
+  residual   = "Lots",
+  Kinv       = gwas.data$Kinv,
+  Q          = gwas.data$Q,
+  npc        = 3)
+```
+
+```{r gwas-base-call, eval = has_asreml}
+# Inspect the model call
+gwasA$call
+```
+
+```{r gwas-base-h2vc, eval = has_asreml}
+# Heritability estimates (VC methods)
+gwasA$heritability$h2.vc
+```
+
+```{r gwas-base-h2pev, eval = has_asreml}
+# Heritability estimates (PEV methods)
+gwasA$heritability$h2.pev
+```
+
+```{r gwas-base-aov, eval = has_asreml}
+# ANOVA table
+gwasA$aov
+```
+
+#### 3.b. Full GWAS scan
+
+Once the base model is satisfactory, supply `geno.data` and `map.data` to trigger
+the marker-by-marker scan. By default, `P3D = TRUE` is used ("Population
+Parameters Previously Determined"), which fixes the variance components from the
+base model and provides a considerable speed gain.
+
+```{r gwas-full, eval = has_asreml}
+gwasA <- gwas.asreml(
+  pheno.data = gwas.data$pheno.data,
+  resp       = "Sucrose",
+  gen        = "Ind",
+  fixedf     = "Lots",
+  residual   = "Lots",
+  Kinv       = gwas.data$Kinv,
+  Q          = gwas.data$Q,
+  npc        = 3,
+  geno.data  = gwas.data$geno.data,
+  map.data   = gwas.data$map.data,
+  pvalue.thr = 0.0005,
+  bonferroni = FALSE,
+  workspace  = "2Gb")
+```
+
+```{r gwas-all, eval = has_asreml}
+# Results for all tested markers
+head(gwasA$gwas.all)
+```
+
+```{r gwas-sel, eval = has_asreml}
+# Significant markers only
+head(gwasA$gwas.sel)
+```
+
+`gwas.asreml()` returns a list of class `gwas.asreml` with six components:
+`call`, `gwas.all`, `gwas.sel`, `mod`, `aov`, and `heritability`.
+`gwas.all` contains one row per marker with columns `marker`, `chrom`, `pos`,
+`maf`, `effect`, `z.ratio`, `p.value`, and `expl.var` (proportion of genetic
+variance explained). `gwas.sel` is the subset of `gwas.all` with
+`p.value < pvalue.thr` (after Bonferroni correction if `bonferroni = TRUE`).
+
+### 4. Visualising results
+
+#### Q-Q plot
+
+`qq.plot()` generates a quantile-quantile plot of observed versus expected
+*p*-values, which helps detect systematic inflation or deflation in the GWAS
+statistics.
+
+```{r qq-plot, eval = has_asreml}
+qq.plot(gwas.table = gwasA$gwas.all)
+```
+
+#### Manhattan plot
+
+`manhattan.plot()` displays the −log₁₀(*p*-value) for every marker across the
+genome. Significant markers above the threshold are highlighted, and any candidate
+regions can be annotated via `tag.table`.
+
+```{r manhattan-plot, eval = has_asreml}
+manhattan.plot(
+  gwas.table = gwasA$gwas.all,
+  pvalue.thr = 0.0005,
+  padding    = 2e6)
+```
+
+When multiple GWAS analyses are stacked in a single `data.frame`, the
+`gwas.index`, `facet.main`, and `facet.secondary` arguments control faceting
+across panels.
+
+#### Genetic map
+
+`map.plot()` draws a karyotype-style view of the chromosomes with marker
+positions. Selected markers can be highlighted via `tag.markers`.
+
+```{r map-plot, eval = has_asreml}
+map.plot(
+  map.data    = gwas.data$map.data,
+  tag.markers = gwasA$gwas.sel$marker)
+```
+
+#### Phenotype-by-genotype plots
+
+`marker.plot()` generates boxplots or violin plots of the phenotypic response
+stratified by genotypic dosage class (0 / 1 / 2) for a set of markers. These
+plots help verify the biological plausibility of detected associations.
+
+```{r marker-plot, eval = has_asreml}
+# Subset genotype matrix to significant markers
+sign.markers   <- gwasA$gwas.sel$marker
+geno.data.sel  <- gwas.data$geno.data[, sign.markers, drop = FALSE]
+
+marker.plot(
+  pheno.data    = gwas.data$pheno.data,
+  indiv         = "Ind",
+  resp          = "Sucrose",
+  geno.data.sel = geno.data.sel,
+  type.plot     = "boxplot")
+```
+
+### 5. Selecting final markers with `select.marker()`
+
+`select.marker()` refines the set of significant markers identified by
+`gwas.asreml()` using backward elimination. Starting from a model that includes
+all candidate markers as fixed covariates, it iteratively drops the marker with
+the highest *p*-value until all remaining markers are below the chosen threshold.
+
+```{r select-marker, eval = has_asreml}
+set <- select.marker(
+  gwas.object   = gwasA,
+  geno.data.sel = geno.data.sel,
+  ref.vc        = 1,
+  pvalue.thr    = 0.1)
+```
+
+```{r select-call, eval = has_asreml}
+# Final model call
+set$call
+```
+
+```{r select-aov, eval = has_asreml}
+# ANOVA table for the selected model
+set$aov
+```
+
+```{r select-sel, eval = has_asreml}
+# Final retained markers
+set$gwas.sel
+```
+
+```{r select-var, eval = has_asreml}
+# Proportion of genetic variance explained by the final set
+set$expl.var
+```
+
+`select.marker()` returns a list with `call`, `gwas.sel`, `mod`, `aov`,
+`expl.var`, and (when collinearity is an issue) `collinear.markers`.
+
+## Bibliography
+
+**Nsibi M., Gouble B., Bureau S., Flutre T., Sauvage C., Audergon J.M., Regnard J.L.** (2020).
+*Adoption and optimization of genomic selection to sustain breeding for Apricot fruit quality.*
+G3 Genes, Genomes, Genet. 10(12):4513–4529.
+doi:[10.1534/g3.120.401437](https://doi.org/10.1534/g3.120.401437)
+
+**Zhang Z., Ersoz E., Lai C.Q., Todhunter R.J., Tiwari H.K., Gore M.A., *et al.*** (2010).
+*Mixed linear model approach adapted for genome-wide association studies.*
+Nature Genetics 42(4):355–360.
+doi:[10.1038/ng.546](https://doi.org/10.1038/ng.546)
+
+## Citation
+
+If you use `ASRgwas` in your research, please cite it as:
+
+> Galli, G., Gezan, S.A., Murillo, D.A., and Murray, D. (2022). *ASRgwas: An R package to perform complex Genome-Wide Association Studies (GWAS)*. Version 1.1.1. VSN International Ltd., Hemel Hempstead, HP1 1ES, UK.
+
+A BibTeX entry can be obtained at any time from R with:
+
+```{r citation, eval = FALSE}
+citation("ASRgwas")
+```
+
+## Contact
+
+Maintained by the VSN International team. For questions, bug reports or
+feature requests, please open an issue on GitHub or contact:
+
+- **Salvador Gezan** (maintainer) — [salvador.gezan@vsni.co.uk](mailto:salvador.gezan@vsni.co.uk)
+- **Giovanni Galli** — [giovanni.galli@vsni.co.uk](mailto:giovanni.galli@vsni.co.uk)
+- **Didier Murillo** — [didier.murilloflorez@ndus.edu](mailto:didier.murilloflorez@ndus.edu)
+- **Darren Murray** — [darren.murray@vsni.co.uk](mailto:darren.murray@vsni.co.uk)
+- **General support** — [support@vsni.co.uk](mailto:support@vsni.co.uk)
+
+## License
+
+`ASRgwas` is released under the [MIT License](LICENSE.md).
+Copyright © 2026 VSN International Ltd.
